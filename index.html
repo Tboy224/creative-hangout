@@ -279,10 +279,11 @@
         <span class="tag">The Creative Hangout</span>
         <h1>Secure your spot</h1>
         <p>
-          Fill in your details, pay the hangout fee online, and receive a unique confirmation code for the event.
+          Fill in your details, make your bank transfer, upload your receipt, and wait for approval by email.
         </p>
         <div class="notice">
-          This is a confirmation code, not a printed ticket. Bring the code with you on the event day for check-in.
+          Your confirmation code will be emailed after your payment receipt has been reviewed.
+          NOTE: NO CODE NO ENTRY.
         </div>
       </section>
 
@@ -328,14 +329,17 @@
               <label>Payment details</label>
               <div class="payment-box">
                 <div><strong>Event:</strong> <span id="eventName">The Creative Hangout</span></div>
-                <div><strong>Fee:</strong> <span id="eventFee">₦2,000</span></div>
-                <div>Payment is handled securely by Paystack.</div>
+                <div><strong>Fee:</strong> <span id="eventFee">NGN 2,000</span></div>
+                <div><strong>Bank:</strong> <span id="bankName">Bank name</span></div>
+                <div><strong>Account number:</strong> <span id="bankAccountNumber">0000000000</span></div>
+                <div><strong>Account name:</strong> <span id="bankAccountName">Account name</span></div>
+                <div>Transfer the exact amount, then upload your receipt below.</div>
               </div>
             </div>
 
             <div class="field full">
-              <label for="receipt">Receipt or proof of payment (optional)</label>
-              <input id="receipt" name="receipt" type="file" accept="image/*,.pdf">
+              <label for="receipt">Receipt or proof of payment</label>
+              <input id="receipt" name="receipt" type="file" accept="image/*,.pdf" required>
             </div>
 
             <div class="field">
@@ -360,23 +364,22 @@
             </div>
           </div>
 
-          <button type="submit">Pay and submit registration</button>
+          <button type="submit">Submit for review</button>
           <div class="error" id="errorMessage" aria-live="polite"></div>
         </form>
 
         <div class="success" id="successMessage" aria-live="polite">
           <h2>Registration received</h2>
-          <p>Your unique hangout confirmation code is:</p>
+          <p>Your receipt has been submitted for review.</p>
           <div class="code" id="confirmationCode"></div>
           <p class="small">
-            Keep this code safe. Your payment has been confirmed for The Creative Hangout.
+            Your confirmation code will be sent to your email after approval.
           </p>
         </div>
       </section>
     </div>
   </main>
 
-  <script src="https://js.paystack.co/v1/inline.js"></script>
   <script>
     const form = document.querySelector("#registrationForm");
     const successMessage = document.querySelector("#successMessage");
@@ -385,11 +388,15 @@
     const submitButton = form.querySelector("button");
     const eventName = document.querySelector("#eventName");
     const eventFee = document.querySelector("#eventFee");
+    const bankName = document.querySelector("#bankName");
+    const bankAccountName = document.querySelector("#bankAccountName");
+    const bankAccountNumber = document.querySelector("#bankAccountNumber");
     let appConfig = {
       eventName: "The Creative Hangout",
       feeNaira: 2000,
-      amountKobo: 200000,
-      paystackPublicKey: ""
+      bankName: "Bank name",
+      bankAccountName: "Account name",
+      bankAccountNumber: "0000000000"
     };
 
     function readReceipt(file) {
@@ -427,9 +434,12 @@
       appConfig = await response.json();
       eventName.textContent = appConfig.eventName;
       eventFee.textContent = formatNaira(appConfig.feeNaira);
+      bankName.textContent = appConfig.bankName;
+      bankAccountName.textContent = appConfig.bankAccountName;
+      bankAccountNumber.textContent = appConfig.bankAccountNumber;
     }
 
-    function collectPayload(paymentReference) {
+    function collectPayload() {
       const formData = new FormData(form);
       const receiptFile = formData.get("receipt");
 
@@ -444,13 +454,12 @@
         businessOwner: formData.get("businessOwner"),
         inviting: formData.get("inviting"),
         expectation: formData.get("expectation"),
-        paymentReference,
         receipt
       }));
     }
 
-    async function submitRegistration(paymentReference) {
-      const payload = await collectPayload(paymentReference);
+    async function submitRegistration() {
+      const payload = await collectPayload();
 
       const response = await fetch("/api/register", {
         method: "POST",
@@ -466,78 +475,26 @@
         throw new Error(result.error || "Registration failed.");
       }
 
-      confirmationCode.textContent = result.code;
+      confirmationCode.textContent = result.reference;
       form.reset();
       successMessage.classList.add("visible");
       successMessage.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-
-    function openPayment() {
-      const formData = new FormData(form);
-      const handler = PaystackPop.setup({
-        key: appConfig.paystackPublicKey,
-        email: String(formData.get("email")),
-        amount: Number(appConfig.amountKobo),
-        currency: "NGN",
-        ref: `TCH-${Date.now()}-${Math.floor(Math.random() * 1000000)}`,
-        label: String(formData.get("name")),
-        metadata: {
-          custom_fields: [
-            {
-              display_name: "Event",
-              variable_name: "event",
-              value: appConfig.eventName
-            },
-            {
-              display_name: "Phone Number",
-              variable_name: "phone",
-              value: String(formData.get("phone"))
-            }
-          ]
-        },
-        callback: function (response) {
-          submitRegistration(response.reference)
-            .catch(function (error) {
-              errorMessage.textContent = error.message || "Registration failed after payment. Please contact the organizer with your payment reference.";
-              errorMessage.classList.add("visible");
-            })
-            .finally(function () {
-              submitButton.disabled = false;
-              submitButton.textContent = "Pay and submit registration";
-            });
-        },
-        onClose: function () {
-          if (!successMessage.classList.contains("visible")) {
-            submitButton.disabled = false;
-            submitButton.textContent = "Pay and submit registration";
-          }
-        }
-      });
-
-      handler.openIframe();
     }
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       errorMessage.classList.remove("visible");
       submitButton.disabled = true;
-      submitButton.textContent = "Opening payment...";
+      submitButton.textContent = "Submitting...";
 
       try {
-        if (!window.PaystackPop) {
-          throw new Error("Paystack could not load. Please check your internet connection and try again.");
-        }
-
-        if (!appConfig.paystackPublicKey) {
-          throw new Error("Paystack public key is not configured.");
-        }
-
-        openPayment();
+        await submitRegistration();
       } catch (error) {
         errorMessage.textContent = error.message || "Registration failed. Please try again.";
         errorMessage.classList.add("visible");
+      } finally {
         submitButton.disabled = false;
-        submitButton.textContent = "Pay and submit registration";
+        submitButton.textContent = "Submit for review";
       }
     });
 

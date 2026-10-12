@@ -1,9 +1,9 @@
 const crypto = require("crypto");
 const fsSync = require("fs");
 const fs = require("fs/promises");
-const https = require("https");
 const http = require("http");
 const path = require("path");
+const tls = require("tls");
 
 function loadEnvFile() {
   const envPath = path.join(__dirname, ".env");
@@ -34,23 +34,25 @@ loadEnvFile();
 
 const PORT = process.env.PORT || 3000;
 const ROOT = __dirname;
-const DATA_DIR = path.join(ROOT, "data");
-const UPLOADS_DIR = path.join(ROOT, "uploads");
+const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, "data");
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(ROOT, "uploads");
 const DB_PATH = path.join(DATA_DIR, "registrations.json");
 const MAX_BODY_SIZE = 8 * 1024 * 1024;
 const EVENT_NAME = process.env.EVENT_NAME || "The Creative Hangout";
 const EVENT_FEE_NAIRA = Number(process.env.EVENT_FEE_NAIRA || 2000);
-const PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY || "";
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "";
-const PAYSTACK_ALLOW_INSECURE_TLS = process.env.PAYSTACK_ALLOW_INSECURE_TLS === "true";
+const BANK_NAME = process.env.BANK_NAME || "Bank name";
+const BANK_ACCOUNT_NAME = process.env.BANK_ACCOUNT_NAME || "Account name";
+const BANK_ACCOUNT_NUMBER = process.env.BANK_ACCOUNT_NUMBER || "0000000000";
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "creativehangout2026";
 const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || "change-this-admin-session-secret";
 const SESSION_COOKIE_NAME = "creative_hangout_admin";
-
-if (PAYSTACK_ALLOW_INSECURE_TLS) {
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-}
+const SMTP_HOST = process.env.SMTP_HOST || "";
+const SMTP_PORT = Number(process.env.SMTP_PORT || 465);
+const SMTP_USER = process.env.SMTP_USER || "";
+const SMTP_PASS = process.env.SMTP_PASS || "";
+const EMAIL_FROM = process.env.EMAIL_FROM || SMTP_USER;
+const SMTP_ALLOW_INSECURE_TLS = process.env.SMTP_ALLOW_INSECURE_TLS === "true";
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -80,7 +82,9 @@ async function readRegistrations() {
 }
 
 async function writeRegistrations(registrations) {
-  await fs.writeFile(DB_PATH, `${JSON.stringify(registrations, null, 2)}\n`, "utf8");
+  const tempPath = `${DB_PATH}.tmp`;
+  await fs.writeFile(tempPath, `${JSON.stringify(registrations, null, 2)}\n`, "utf8");
+  await fs.rename(tempPath, DB_PATH);
 }
 
 function sendJson(res, status, data) {
@@ -204,44 +208,124 @@ function handleAdminLogout(res) {
   res.end();
 }
 
-function requestPaystack(pathname) {
+function smtpRequest(socket, command, expectedCodes) {
   return new Promise((resolve, reject) => {
-    const requestOptions = {
-      hostname: "api.paystack.co",
-      path: pathname,
-      method: "GET",
-      rejectUnauthorized: !PAYSTACK_ALLOW_INSECURE_TLS,
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`
-      }
-    };
+    let response = "";
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("SMTP request timed out."));
+    }, 30000);
 
-    if (PAYSTACK_ALLOW_INSECURE_TLS) {
-      requestOptions.agent = new https.Agent({ rejectUnauthorized: false });
+    function cleanup() {
+      clearTimeout(timeout);
+      socket.off("data", handleData);
+      socket.off("error", handleError);
     }
 
-    const request = https.request(
-      requestOptions,
-      (response) => {
-        let body = "";
+    function handleError(error) {
+      cleanup();
+      reject(error);
+    }
 
-        response.on("data", (chunk) => {
-          body += chunk;
-        });
+    function handleData(chunk) {
+      response += chunk.toString("utf8");
+      const lines = response.trimEnd().split(/\r?\n/);
+      const lastLine = lines[lines.length - 1] || "";
+      const code = Number(lastLine.slice(0, 3));
+      const pendingMoreLines = /^\d{3}-/.test(lastLine);
 
-        response.on("end", () => {
-          try {
-            resolve(JSON.parse(body));
-          } catch (error) {
-            reject(error);
-          }
-        });
+      if (!pendingMoreLines && expectedCodes.includes(code)) {
+        cleanup();
+        resolve(response);
+        return;
       }
-    );
 
-    request.on("error", reject);
-    request.end();
+      if (!pendingMoreLines && Number.isInteger(code) && !expectedCodes.includes(code)) {
+        cleanup();
+        reject(new Error(`SMTP error: ${response.trim()}`));
+      }
+    }
+
+    socket.on("data", handleData);
+    socket.on("error", handleError);
+
+    if (command) {
+      socket.write(`${command}\r\n`);
+    }
   });
+}
+
+function encodeEmailSubject(subject) {
+  return `=?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
+}
+
+function formatAddress(address) {
+  const match = String(address).match(/^(.*)<([^>]+)>$/);
+
+  if (!match) {
+    return address;
+  }
+
+  const name = match[1].trim().replace(/^"|"$/g, "");
+  const email = match[2].trim();
+  return `"${name.replace(/"/g, '\\"')}" <${email}>`;
+}
+
+function extractEmailAddress(address) {
+  const match = String(address).match(/<([^>]+)>/);
+  return match ? match[1].trim() : String(address).trim();
+}
+
+async function sendApprovalEmail(registration) {
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !EMAIL_FROM) {
+    throw new Error("SMTP email settings are not configured.");
+  }
+
+  const socket = tls.connect({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    servername: SMTP_HOST,
+    rejectUnauthorized: !SMTP_ALLOW_INSECURE_TLS
+  });
+
+  socket.on("error", () => {});
+
+  try {
+    await smtpRequest(socket, null, [220]);
+    await smtpRequest(socket, `EHLO ${SMTP_HOST}`, [250]);
+    await smtpRequest(socket, "AUTH LOGIN", [334]);
+    await smtpRequest(socket, Buffer.from(SMTP_USER).toString("base64"), [334]);
+    await smtpRequest(socket, Buffer.from(SMTP_PASS).toString("base64"), [235]);
+
+    const fromEmail = extractEmailAddress(EMAIL_FROM);
+    await smtpRequest(socket, `MAIL FROM:<${fromEmail}>`, [250]);
+    await smtpRequest(socket, `RCPT TO:<${registration.email}>`, [250, 251]);
+    await smtpRequest(socket, "DATA", [354]);
+
+    const subject = `${EVENT_NAME} confirmation code`;
+    const message = [
+      `From: ${formatAddress(EMAIL_FROM)}`,
+      `To: ${registration.email}`,
+      `Subject: ${encodeEmailSubject(subject)}`,
+      "MIME-Version: 1.0",
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      `Hi ${registration.name},`,
+      "",
+      `Your payment for ${EVENT_NAME} has been approved.`,
+      `Your confirmation code is: ${registration.code}`,
+      "",
+      "Please keep this code safe and bring it with you for check-in.",
+      "",
+      EVENT_NAME,
+      "."
+    ].join("\r\n");
+
+    await smtpRequest(socket, message, [250]);
+    await smtpRequest(socket, "QUIT", [221]);
+  } finally {
+    socket.end();
+  }
 }
 
 function readBody(req) {
@@ -318,8 +402,8 @@ function validateRegistration(data) {
     }
   }
 
-  if (!required(data.paymentReference)) {
-    return "Payment reference is required.";
+  if (!data.receipt || !required(data.receipt.content)) {
+    return "Receipt is required.";
   }
 
   return null;
@@ -340,37 +424,13 @@ async function saveReceipt(receipt, code) {
   return `/uploads/${fileName}`;
 }
 
-async function verifyPayment(reference, email) {
-  if (!PAYSTACK_SECRET_KEY) {
-    throw new Error("Paystack secret key is not configured.");
-  }
-
-  const result = await requestPaystack(`/transaction/verify/${encodeURIComponent(reference)}`);
-
-  if (!result.status || result.data.status !== "success") {
-    throw new Error("Payment could not be verified.");
-  }
-
-  const expectedAmount = EVENT_FEE_NAIRA * 100;
-
-  if (result.data.amount !== expectedAmount) {
-    throw new Error("Payment amount does not match the event fee.");
-  }
-
-  if (email && result.data.customer?.email?.toLowerCase() !== email.toLowerCase()) {
-    throw new Error("Payment email does not match the registration email.");
-  }
-
-  return result.data;
-}
-
 function handleConfig(res) {
   sendJson(res, 200, {
     eventName: EVENT_NAME,
     feeNaira: EVENT_FEE_NAIRA,
-    amountKobo: EVENT_FEE_NAIRA * 100,
-    paystackPublicKey: PAYSTACK_PUBLIC_KEY,
-    localTlsBypass: PAYSTACK_ALLOW_INSECURE_TLS
+    bankName: BANK_NAME,
+    bankAccountName: BANK_ACCOUNT_NAME,
+    bankAccountNumber: BANK_ACCOUNT_NUMBER
   });
 }
 
@@ -386,21 +446,22 @@ async function handleRegister(req, res) {
     }
 
     const registrations = await readRegistrations();
-    const existingPayment = registrations.find(
-      (registration) => registration.paymentReference === data.paymentReference
+    const existingPending = registrations.find(
+      (registration) => registration.email.toLowerCase() === data.email.trim().toLowerCase()
+        && registration.paymentStatus === "Pending review"
     );
 
-    if (existingPayment) {
-      sendJson(res, 409, { error: "This payment reference has already been registered." });
+    if (existingPending) {
+      sendJson(res, 409, { error: "This email already has a pending registration." });
       return;
     }
 
-    const payment = await verifyPayment(data.paymentReference, data.email.trim());
-    const code = createCode(registrations);
-    const receiptUrl = await saveReceipt(data.receipt, code);
+    const pendingId = `TCH-PENDING-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+    const receiptUrl = await saveReceipt(data.receipt, pendingId);
 
     const registration = {
-      code,
+      id: pendingId,
+      code: "",
       name: data.name.trim(),
       email: data.email.trim(),
       phone: data.phone.trim(),
@@ -412,9 +473,9 @@ async function handleRegister(req, res) {
       inviting: data.inviting,
       expectation: data.expectation.trim(),
       receiptUrl,
-      paymentReference: data.paymentReference,
-      paidAmount: payment.amount / 100,
-      paymentStatus: "Paid",
+      paymentReference: pendingId,
+      paidAmount: EVENT_FEE_NAIRA,
+      paymentStatus: "Pending review",
       createdAt: new Date().toISOString()
     };
 
@@ -422,11 +483,78 @@ async function handleRegister(req, res) {
     await writeRegistrations(registrations);
 
     sendJson(res, 201, {
-      code: registration.code,
+      reference: registration.paymentReference,
       paymentStatus: registration.paymentStatus
     });
   } catch (error) {
     sendJson(res, 500, { error: error.message || "Registration failed." });
+  }
+}
+
+async function handleApproveRegistration(req, res) {
+  try {
+    const body = await readBody(req);
+    const data = JSON.parse(body || "{}");
+    const registrations = await readRegistrations();
+    const registration = registrations.find((item) => item.paymentReference === data.reference || item.id === data.reference);
+
+    if (!registration) {
+      sendJson(res, 404, { error: "Registration not found." });
+      return;
+    }
+
+    if (registration.paymentStatus !== "Approved") {
+      registration.code = createCode(registrations);
+      registration.paymentStatus = "Approved";
+      registration.approvedAt = new Date().toISOString();
+      await writeRegistrations(registrations);
+    }
+
+    if (registration.emailStatus === "Sent") {
+      sendJson(res, 200, { registration });
+      return;
+    }
+
+    try {
+      await sendApprovalEmail(registration);
+      registration.emailStatus = "Sent";
+      registration.emailSentAt = new Date().toISOString();
+      await writeRegistrations(registrations);
+    } catch (error) {
+      registration.emailStatus = "Failed";
+      registration.emailError = error.message || "Email could not be sent.";
+      await writeRegistrations(registrations);
+      sendJson(res, 500, {
+        error: `Approved, but email failed: ${registration.emailError}`,
+        registration
+      });
+      return;
+    }
+
+    sendJson(res, 200, { registration });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message || "Could not approve registration." });
+  }
+}
+
+async function handleRejectRegistration(req, res) {
+  try {
+    const body = await readBody(req);
+    const data = JSON.parse(body || "{}");
+    const registrations = await readRegistrations();
+    const registration = registrations.find((item) => item.paymentReference === data.reference || item.id === data.reference);
+
+    if (!registration) {
+      sendJson(res, 404, { error: "Registration not found." });
+      return;
+    }
+
+    registration.paymentStatus = "Rejected";
+    registration.rejectedAt = new Date().toISOString();
+    await writeRegistrations(registrations);
+    sendJson(res, 200, { registration });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message || "Could not reject registration." });
   }
 }
 
@@ -486,6 +614,18 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/api/registrations") {
     if (!requireAdmin(req, res)) return;
     await handleListRegistrations(res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/admin/approve") {
+    if (!requireAdmin(req, res)) return;
+    await handleApproveRegistration(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/admin/reject") {
+    if (!requireAdmin(req, res)) return;
+    await handleRejectRegistration(req, res);
     return;
   }
 

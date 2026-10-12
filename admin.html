@@ -56,6 +56,37 @@
       text-decoration: none;
     }
 
+    button {
+      min-height: 34px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--brand);
+      color: #ffffff;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 800;
+      padding: 7px 10px;
+      white-space: nowrap;
+    }
+
+    button:hover {
+      background: #0b5f59;
+    }
+
+    button.danger {
+      background: #991b1b;
+    }
+
+    button.danger:hover {
+      background: #7f1d1d;
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: 0.68;
+    }
+
     .actions {
       display: flex;
       gap: 14px;
@@ -114,6 +145,22 @@
       white-space: nowrap;
     }
 
+    .status.approved {
+      background: #ecfdf5;
+      color: #065f46;
+    }
+
+    .status.rejected {
+      background: #fef2f2;
+      color: #991b1b;
+    }
+
+    .row-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
     .empty {
       padding: 28px;
       border: 1px solid var(--line);
@@ -170,6 +217,50 @@
       }[character]));
     }
 
+    function escapeAttribute(value) {
+      return escapeHtml(value).replace(/`/g, "&#096;");
+    }
+
+    function statusClass(status) {
+      if (status === "Approved") return "approved";
+      if (status === "Rejected") return "rejected";
+      return "";
+    }
+
+    async function updateRegistration(reference, action, button) {
+      button.disabled = true;
+      button.textContent = action === "approve" ? "Approving..." : "Rejecting...";
+
+      try {
+        const response = await fetch(`/api/admin/${action}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ reference })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || "Update failed.");
+        }
+
+        await loadRegistrations();
+      } catch (error) {
+        alert(error.message || "Update failed.");
+        await loadRegistrations();
+      }
+    }
+
+    window.approveRegistration = function (reference, button) {
+      updateRegistration(reference, "approve", button);
+    };
+
+    window.rejectRegistration = function (reference, button) {
+      updateRegistration(reference, "reject", button);
+    };
+
     async function loadRegistrations() {
       const response = await fetch("/api/registrations");
       const data = await response.json();
@@ -197,6 +288,8 @@
               <th>Receipt</th>
               <th>Payment</th>
               <th>Status</th>
+              <th>Email</th>
+              <th>Action</th>
               <th>Date</th>
             </tr>
           </thead>
@@ -221,10 +314,24 @@
                   ${registration.receiptUrl ? `<a href="${escapeHtml(registration.receiptUrl)}" target="_blank" rel="noreferrer">View</a>` : "None"}
                 </td>
                 <td>
-                  ${registration.paidAmount ? `₦${Number(registration.paidAmount).toLocaleString("en-NG")}` : "N/A"}<br>
+                  ${registration.paidAmount ? `NGN ${Number(registration.paidAmount).toLocaleString("en-NG")}` : "N/A"}<br>
                   ${registration.paymentReference ? escapeHtml(registration.paymentReference) : ""}
                 </td>
-                <td><span class="status">${escapeHtml(registration.paymentStatus)}</span></td>
+                <td><span class="status ${statusClass(registration.paymentStatus)}">${escapeHtml(registration.paymentStatus)}</span></td>
+                <td>${escapeHtml(registration.emailStatus || "Not sent")}</td>
+                <td>
+                  ${registration.paymentStatus === "Pending review" ? `
+                    <div class="row-actions">
+                      <button type="button" onclick="approveRegistration('${escapeAttribute(registration.paymentReference)}', this)">Approve</button>
+                      <button class="danger" type="button" onclick="rejectRegistration('${escapeAttribute(registration.paymentReference)}', this)">Reject</button>
+                    </div>
+                  ` : ""}
+                  ${registration.paymentStatus === "Approved" && registration.emailStatus === "Failed" ? `
+                    <div class="row-actions">
+                      <button type="button" onclick="approveRegistration('${escapeAttribute(registration.paymentReference)}', this)">Retry email</button>
+                    </div>
+                  ` : ""}
+                </td>
                 <td>${formatDate(registration.createdAt)}</td>
               </tr>
             `).join("")}
