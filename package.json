@@ -4,7 +4,7 @@
   "private": true,
   "description": "Custom hangout registration app with unique confirmation codes.",
   "scripts": {
-    "start": "node --env-file=.env server.js"
+    "start": "node server.js"
   },
   "engines": {
     "node": ">=18"
