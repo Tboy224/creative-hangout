@@ -53,6 +53,10 @@ const SMTP_USER = process.env.SMTP_USER || "";
 const SMTP_PASS = process.env.SMTP_PASS || "";
 const EMAIL_FROM = process.env.EMAIL_FROM || SMTP_USER;
 const SMTP_ALLOW_INSECURE_TLS = process.env.SMTP_ALLOW_INSECURE_TLS === "true";
+const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/rest\/v1\/?$/, "").replace(/\/+$/, "");
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || "receipts";
+const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -76,6 +80,14 @@ async function ensureStorage() {
 }
 
 async function readRegistrations() {
+  if (USE_SUPABASE) {
+    const rows = await supabaseRequest(
+      `/rest/v1/registrations?select=*&order=created_at.desc`,
+      { method: "GET" }
+    );
+    return rows.map(registrationFromRow);
+  }
+
   await ensureStorage();
   const text = await fs.readFile(DB_PATH, "utf8");
   return JSON.parse(text || "[]");
@@ -85,6 +97,132 @@ async function writeRegistrations(registrations) {
   const tempPath = `${DB_PATH}.tmp`;
   await fs.writeFile(tempPath, `${JSON.stringify(registrations, null, 2)}\n`, "utf8");
   await fs.rename(tempPath, DB_PATH);
+}
+
+async function supabaseRequest(pathname, options = {}) {
+  const response = await fetch(`${SUPABASE_URL}${pathname}`, {
+    ...options,
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      ...(options.headers || {})
+    }
+  });
+
+  const text = await response.text();
+  let data = null;
+
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+
+  if (!response.ok) {
+    throw new Error(data?.message || data?.error_description || data?.error || "Supabase request failed.");
+  }
+
+  return data;
+}
+
+function registrationFromRow(row) {
+  return {
+    id: row.id,
+    code: row.code || "",
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    location: row.location,
+    skill: row.skill,
+    department: row.department,
+    level: row.level,
+    businessOwner: row.business_owner,
+    inviting: row.inviting,
+    expectation: row.expectation,
+    receiptUrl: row.receipt_url || "",
+    paymentReference: row.payment_reference,
+    paidAmount: row.paid_amount,
+    paymentStatus: row.payment_status,
+    emailStatus: row.email_status || "",
+    emailError: row.email_error || "",
+    createdAt: row.created_at,
+    approvedAt: row.approved_at,
+    emailSentAt: row.email_sent_at,
+    rejectedAt: row.rejected_at
+  };
+}
+
+function rowFromRegistration(registration) {
+  return {
+    id: registration.id,
+    code: registration.code || "",
+    name: registration.name,
+    email: registration.email,
+    phone: registration.phone,
+    location: registration.location,
+    skill: registration.skill,
+    department: registration.department,
+    level: registration.level,
+    business_owner: registration.businessOwner,
+    inviting: registration.inviting,
+    expectation: registration.expectation,
+    receipt_url: registration.receiptUrl || "",
+    payment_reference: registration.paymentReference,
+    paid_amount: registration.paidAmount,
+    payment_status: registration.paymentStatus,
+    email_status: registration.emailStatus || "",
+    email_error: registration.emailError || "",
+    created_at: registration.createdAt,
+    approved_at: registration.approvedAt || null,
+    email_sent_at: registration.emailSentAt || null,
+    rejected_at: registration.rejectedAt || null
+  };
+}
+
+async function createRegistration(registration) {
+  if (!USE_SUPABASE) {
+    const registrations = await readRegistrations();
+    registrations.unshift(registration);
+    await writeRegistrations(registrations);
+    return registration;
+  }
+
+  const rows = await supabaseRequest("/rest/v1/registrations?select=*", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Prefer: "return=representation"
+    },
+    body: JSON.stringify(rowFromRegistration(registration))
+  });
+
+  return registrationFromRow(rows[0]);
+}
+
+async function updateRegistration(registration) {
+  if (!USE_SUPABASE) {
+    const registrations = await readRegistrations();
+    const index = registrations.findIndex((item) => item.paymentReference === registration.paymentReference || item.id === registration.id);
+
+    if (index === -1) {
+      throw new Error("Registration not found.");
+    }
+
+    registrations[index] = registration;
+    await writeRegistrations(registrations);
+    return registration;
+  }
+
+  const rows = await supabaseRequest(`/rest/v1/registrations?id=eq.${encodeURIComponent(registration.id)}&select=*`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Prefer: "return=representation"
+    },
+    body: JSON.stringify(rowFromRegistration(registration))
+  });
+
+  return registrationFromRow(rows[0]);
 }
 
 function sendJson(res, status, data) {
@@ -416,11 +554,27 @@ async function saveReceipt(receipt, code) {
 
   const extension = getReceiptExtension(receipt);
   const base64 = receipt.content.replace(/^data:[^;]+;base64,/, "");
+  const buffer = Buffer.from(base64, "base64");
   const originalName = cleanFileName(path.basename(receipt.name, path.extname(receipt.name)));
   const fileName = `${code}-${originalName}${extension}`;
+
+  if (USE_SUPABASE) {
+    const storagePath = encodeURIComponent(fileName);
+    await supabaseRequest(`/storage/v1/object/${encodeURIComponent(SUPABASE_BUCKET)}/${storagePath}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": receipt.type || contentTypes[extension] || "application/octet-stream",
+        "x-upsert": "true"
+      },
+      body: buffer
+    });
+
+    return `${SUPABASE_URL}/storage/v1/object/public/${encodeURIComponent(SUPABASE_BUCKET)}/${storagePath}`;
+  }
+
   const filePath = path.join(UPLOADS_DIR, fileName);
 
-  await fs.writeFile(filePath, Buffer.from(base64, "base64"));
+  await fs.writeFile(filePath, buffer);
   return `/uploads/${fileName}`;
 }
 
@@ -479,8 +633,7 @@ async function handleRegister(req, res) {
       createdAt: new Date().toISOString()
     };
 
-    registrations.unshift(registration);
-    await writeRegistrations(registrations);
+    await createRegistration(registration);
 
     sendJson(res, 201, {
       reference: registration.paymentReference,
@@ -507,7 +660,7 @@ async function handleApproveRegistration(req, res) {
       registration.code = createCode(registrations);
       registration.paymentStatus = "Approved";
       registration.approvedAt = new Date().toISOString();
-      await writeRegistrations(registrations);
+      await updateRegistration(registration);
     }
 
     if (registration.emailStatus === "Sent") {
@@ -519,11 +672,11 @@ async function handleApproveRegistration(req, res) {
       await sendApprovalEmail(registration);
       registration.emailStatus = "Sent";
       registration.emailSentAt = new Date().toISOString();
-      await writeRegistrations(registrations);
+      await updateRegistration(registration);
     } catch (error) {
       registration.emailStatus = "Failed";
       registration.emailError = error.message || "Email could not be sent.";
-      await writeRegistrations(registrations);
+      await updateRegistration(registration);
       sendJson(res, 500, {
         error: `Approved, but email failed: ${registration.emailError}`,
         registration
@@ -551,7 +704,7 @@ async function handleRejectRegistration(req, res) {
 
     registration.paymentStatus = "Rejected";
     registration.rejectedAt = new Date().toISOString();
-    await writeRegistrations(registrations);
+    await updateRegistration(registration);
     sendJson(res, 200, { registration });
   } catch (error) {
     sendJson(res, 500, { error: error.message || "Could not reject registration." });

@@ -2,7 +2,7 @@ services:
   - type: web
     name: creative-hangout
     runtime: node
-    plan: starter
+    plan: free
     buildCommand: npm install
     startCommand: npm start
     envVars:
@@ -34,11 +34,9 @@ services:
         sync: false
       - key: EMAIL_FROM
         sync: false
-      - key: DATA_DIR
-        value: /var/data/data
-      - key: UPLOADS_DIR
-        value: /var/data/uploads
-    disk:
-      name: creative-hangout-storage
-      mountPath: /var/data
-      sizeGB: 1
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: receipts
