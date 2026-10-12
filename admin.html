@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hangout Admin</title>
+  <style>
+    :root {
+      --ink: #172026;
+      --muted: #65717b;
+      --line: #d8e0e6;
+      --brand: #0f766e;
+      --paper: #ffffff;
+      --wash: #eef6f4;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #fbfcfd;
+      color: var(--ink);
+    }
+
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 22px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.8rem, 4vw, 2.7rem);
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    a {
+      color: var(--brand);
+      font-weight: 800;
+      text-decoration: none;
+    }
+
+    .actions {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      box-shadow: 0 18px 45px rgba(23, 32, 38, 0.08);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 980px;
+    }
+
+    th,
+    td {
+      padding: 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      font-size: 0.92rem;
+    }
+
+    th {
+      background: var(--wash);
+      color: #123f3b;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .code {
+      font-weight: 900;
+      color: var(--brand);
+      white-space: nowrap;
+    }
+
+    .status {
+      display: inline-flex;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: #fff8e8;
+      color: #594015;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .empty {
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      text-align: center;
+    }
+
+    @media (max-width: 700px) {
+      header {
+        display: block;
+      }
+
+      .actions {
+        display: flex;
+        margin-top: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Registrations</h1>
+        <p>View everyone who has submitted the hangout form.</p>
+      </div>
+      <div class="actions">
+        <a href="/">Open form</a>
+        <a href="/admin/logout">Logout</a>
+      </div>
+    </header>
+
+    <div id="content" class="empty">Loading registrations...</div>
+  </main>
+
+  <script>
+    const content = document.querySelector("#content");
+
+    function formatDate(value) {
+      return new Intl.DateTimeFormat("en-NG", {
+        dateStyle: "medium",
+        timeStyle: "short"
+      }).format(new Date(value));
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (character) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#039;"
+      }[character]));
+    }
+
+    async function loadRegistrations() {
+      const response = await fetch("/api/registrations");
+      const data = await response.json();
+
+      if (!data.registrations.length) {
+        content.className = "empty";
+        content.textContent = "No registrations yet.";
+        return;
+      }
+
+      content.className = "table-wrap";
+      content.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Name</th>
+              <th>Contact</th>
+              <th>Location</th>
+              <th>Department</th>
+              <th>Level</th>
+              <th>Skill</th>
+              <th>Business</th>
+              <th>Inviting</th>
+              <th>Receipt</th>
+              <th>Payment</th>
+              <th>Status</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.registrations.map((registration) => `
+              <tr>
+                <td class="code">${escapeHtml(registration.code)}</td>
+                <td>
+                  <strong>${escapeHtml(registration.name)}</strong>
+                </td>
+                <td>
+                  ${escapeHtml(registration.email)}<br>
+                  ${escapeHtml(registration.phone)}
+                </td>
+                <td>${escapeHtml(registration.location)}</td>
+                <td>${escapeHtml(registration.department || "")}</td>
+                <td>${escapeHtml(registration.level || "")}</td>
+                <td>${escapeHtml(registration.skill)}</td>
+                <td>${escapeHtml(registration.businessOwner)}</td>
+                <td>${escapeHtml(registration.inviting)}</td>
+                <td>
+                  ${registration.receiptUrl ? `<a href="${escapeHtml(registration.receiptUrl)}" target="_blank" rel="noreferrer">View</a>` : "None"}
+                </td>
+                <td>
+                  ${registration.paidAmount ? `₦${Number(registration.paidAmount).toLocaleString("en-NG")}` : "N/A"}<br>
+                  ${registration.paymentReference ? escapeHtml(registration.paymentReference) : ""}
+                </td>
+                <td><span class="status">${escapeHtml(registration.paymentStatus)}</span></td>
+                <td>${formatDate(registration.createdAt)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    loadRegistrations().catch(() => {
+      content.className = "empty";
+      content.textContent = "Could not load registrations.";
+    });
+  </script>
+</body>
+</html>

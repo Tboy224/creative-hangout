@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Creative Hangout Registration</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172026;
+      --muted: #65717b;
+      --line: #d8e0e6;
+      --field: #f7f9fb;
+      --brand: #0f766e;
+      --brand-dark: #0b5f59;
+      --accent: #f59e0b;
+      --paper: #ffffff;
+      --wash: #eef6f4;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(135deg, rgba(15, 118, 110, 0.12), transparent 38%),
+        linear-gradient(315deg, rgba(245, 158, 11, 0.12), transparent 35%),
+        #fbfcfd;
+      color: var(--ink);
+    }
+
+    main {
+      width: min(1040px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 40px 0;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 0.85fr 1.15fr;
+      gap: 28px;
+      align-items: start;
+    }
+
+    .intro {
+      position: sticky;
+      top: 28px;
+      padding: 32px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      box-shadow: 0 18px 45px rgba(23, 32, 38, 0.08);
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: var(--wash);
+      color: var(--brand-dark);
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
+
+    h1 {
+      margin: 22px 0 12px;
+      font-size: clamp(2rem, 5vw, 3.4rem);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .intro p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.65;
+      font-size: 1rem;
+    }
+
+    .notice {
+      margin-top: 24px;
+      padding: 16px;
+      border-left: 4px solid var(--accent);
+      background: #fff8e8;
+      color: #594015;
+      line-height: 1.5;
+      border-radius: 6px;
+    }
+
+    form,
+    .success {
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      box-shadow: 0 18px 45px rgba(23, 32, 38, 0.08);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .field.full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      min-height: 46px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--field);
+      color: var(--ink);
+      font: inherit;
+      padding: 11px 12px;
+      outline: none;
+    }
+
+    textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
+      background: #ffffff;
+    }
+
+    .choice-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .choice {
+      flex: 1 1 140px;
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--field);
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .choice input {
+      width: 18px;
+      min-height: 18px;
+      accent-color: var(--brand);
+    }
+
+    .payment-box {
+      display: grid;
+      gap: 10px;
+      padding: 16px;
+      border-radius: 8px;
+      background: #eef6f4;
+      color: #123f3b;
+      line-height: 1.5;
+    }
+
+    .payment-box strong {
+      color: #0b5f59;
+    }
+
+    button {
+      width: 100%;
+      min-height: 52px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--brand);
+      color: #ffffff;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 800;
+      margin-top: 22px;
+    }
+
+    button:hover {
+      background: var(--brand-dark);
+    }
+
+    .success {
+      display: none;
+      margin-top: 22px;
+      text-align: center;
+    }
+
+    .success.visible {
+      display: block;
+    }
+
+    .code {
+      display: inline-block;
+      margin: 14px 0;
+      padding: 12px 18px;
+      border: 1px dashed var(--brand);
+      border-radius: 6px;
+      background: var(--wash);
+      color: var(--brand-dark);
+      font-size: 1.45rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    .error {
+      display: none;
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 6px;
+      background: #fef2f2;
+      color: #991b1b;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+
+    .error.visible {
+      display: block;
+    }
+
+    @media (max-width: 820px) {
+      main {
+        padding: 20px 0;
+      }
+
+      .layout,
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .intro {
+        position: static;
+        padding: 24px;
+      }
+
+      form,
+      .success {
+        padding: 22px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="layout">
+      <section class="intro" aria-label="Hangout details">
+        <span class="tag">The Creative Hangout</span>
+        <h1>Secure your spot</h1>
+        <p>
+          Fill in your details, pay the hangout fee online, and receive a unique confirmation code for the event.
+        </p>
+        <div class="notice">
+          This is a confirmation code, not a printed ticket. Bring the code with you on the event day for check-in.
+        </div>
+      </section>
+
+      <section>
+        <form id="registrationForm">
+          <div class="grid">
+            <div class="field">
+              <label for="name">Name</label>
+              <input id="name" name="name" type="text" autocomplete="name" required>
+            </div>
+
+            <div class="field">
+              <label for="email">Email</label>
+              <input id="email" name="email" type="email" autocomplete="email" required>
+            </div>
+
+            <div class="field">
+              <label for="phone">Phone number</label>
+              <input id="phone" name="phone" type="tel" autocomplete="tel" required>
+            </div>
+
+            <div class="field">
+              <label for="location">Location</label>
+              <input id="location" name="location" type="text" autocomplete="address-level2" required>
+            </div>
+
+            <div class="field">
+              <label for="skill">What is your skill?</label>
+              <input id="skill" name="skill" type="text" placeholder="Example: design, baking, coding" required>
+            </div>
+
+            <div class="field">
+              <label for="department">Department</label>
+              <input id="department" name="department" type="text" required>
+            </div>
+
+            <div class="field">
+              <label for="level">Level</label>
+              <input id="level" name="level" type="text" placeholder="Example: 100 level" required>
+            </div>
+
+            <div class="field full">
+              <label>Payment details</label>
+              <div class="payment-box">
+                <div><strong>Event:</strong> <span id="eventName">The Creative Hangout</span></div>
+                <div><strong>Fee:</strong> <span id="eventFee">₦2,000</span></div>
+                <div>Payment is handled securely by Paystack.</div>
+              </div>
+            </div>
+
+            <div class="field full">
+              <label for="receipt">Receipt or proof of payment (optional)</label>
+              <input id="receipt" name="receipt" type="file" accept="image/*,.pdf">
+            </div>
+
+            <div class="field">
+              <label>Are you a business owner?</label>
+              <div class="choice-row">
+                <label class="choice"><input type="radio" name="businessOwner" value="Yes" required> Yes</label>
+                <label class="choice"><input type="radio" name="businessOwner" value="No"> No</label>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Are you inviting anyone?</label>
+              <div class="choice-row">
+                <label class="choice"><input type="radio" name="inviting" value="Yes" required> Yes</label>
+                <label class="choice"><input type="radio" name="inviting" value="No"> No</label>
+              </div>
+            </div>
+
+            <div class="field full">
+              <label for="expectation">What do you expect from the hangout?</label>
+              <textarea id="expectation" name="expectation" required></textarea>
+            </div>
+          </div>
+
+          <button type="submit">Pay and submit registration</button>
+          <div class="error" id="errorMessage" aria-live="polite"></div>
+        </form>
+
+        <div class="success" id="successMessage" aria-live="polite">
+          <h2>Registration received</h2>
+          <p>Your unique hangout confirmation code is:</p>
+          <div class="code" id="confirmationCode"></div>
+          <p class="small">
+            Keep this code safe. Your payment has been confirmed for The Creative Hangout.
+          </p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="https://js.paystack.co/v1/inline.js"></script>
+  <script>
+    const form = document.querySelector("#registrationForm");
+    const successMessage = document.querySelector("#successMessage");
+    const confirmationCode = document.querySelector("#confirmationCode");
+    const errorMessage = document.querySelector("#errorMessage");
+    const submitButton = form.querySelector("button");
+    const eventName = document.querySelector("#eventName");
+    const eventFee = document.querySelector("#eventFee");
+    let appConfig = {
+      eventName: "The Creative Hangout",
+      feeNaira: 2000,
+      amountKobo: 200000,
+      paystackPublicKey: ""
+    };
+
+    function readReceipt(file) {
+      return new Promise((resolve, reject) => {
+        if (!file || !file.name) {
+          resolve(null);
+          return;
+        }
+
+        const reader = new FileReader();
+
+        reader.addEventListener("load", () => {
+          resolve({
+            name: file.name,
+            type: file.type,
+            content: reader.result
+          });
+        });
+
+        reader.addEventListener("error", () => reject(new Error("Could not read receipt.")));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function formatNaira(value) {
+      return new Intl.NumberFormat("en-NG", {
+        style: "currency",
+        currency: "NGN",
+        maximumFractionDigits: 0
+      }).format(value);
+    }
+
+    async function loadConfig() {
+      const response = await fetch("/api/config");
+      appConfig = await response.json();
+      eventName.textContent = appConfig.eventName;
+      eventFee.textContent = formatNaira(appConfig.feeNaira);
+    }
+
+    function collectPayload(paymentReference) {
+      const formData = new FormData(form);
+      const receiptFile = formData.get("receipt");
+
+      return readReceipt(receiptFile).then((receipt) => ({
+        name: formData.get("name"),
+        email: formData.get("email"),
+        phone: formData.get("phone"),
+        location: formData.get("location"),
+        skill: formData.get("skill"),
+        department: formData.get("department"),
+        level: formData.get("level"),
+        businessOwner: formData.get("businessOwner"),
+        inviting: formData.get("inviting"),
+        expectation: formData.get("expectation"),
+        paymentReference,
+        receipt
+      }));
+    }
+
+    async function submitRegistration(paymentReference) {
+      const payload = await collectPayload(paymentReference);
+
+      const response = await fetch("/api/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Registration failed.");
+      }
+
+      confirmationCode.textContent = result.code;
+      form.reset();
+      successMessage.classList.add("visible");
+      successMessage.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function openPayment() {
+      const formData = new FormData(form);
+      const handler = PaystackPop.setup({
+        key: appConfig.paystackPublicKey,
+        email: String(formData.get("email")),
+        amount: Number(appConfig.amountKobo),
+        currency: "NGN",
+        ref: `TCH-${Date.now()}-${Math.floor(Math.random() * 1000000)}`,
+        label: String(formData.get("name")),
+        metadata: {
+          custom_fields: [
+            {
+              display_name: "Event",
+              variable_name: "event",
+              value: appConfig.eventName
+            },
+            {
+              display_name: "Phone Number",
+              variable_name: "phone",
+              value: String(formData.get("phone"))
+            }
+          ]
+        },
+        callback: function (response) {
+          submitRegistration(response.reference)
+            .catch(function (error) {
+              errorMessage.textContent = error.message || "Registration failed after payment. Please contact the organizer with your payment reference.";
+              errorMessage.classList.add("visible");
+            })
+            .finally(function () {
+              submitButton.disabled = false;
+              submitButton.textContent = "Pay and submit registration";
+            });
+        },
+        onClose: function () {
+          if (!successMessage.classList.contains("visible")) {
+            submitButton.disabled = false;
+            submitButton.textContent = "Pay and submit registration";
+          }
+        }
+      });
+
+      handler.openIframe();
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      errorMessage.classList.remove("visible");
+      submitButton.disabled = true;
+      submitButton.textContent = "Opening payment...";
+
+      try {
+        if (!window.PaystackPop) {
+          throw new Error("Paystack could not load. Please check your internet connection and try again.");
+        }
+
+        if (!appConfig.paystackPublicKey) {
+          throw new Error("Paystack public key is not configured.");
+        }
+
+        openPayment();
+      } catch (error) {
+        errorMessage.textContent = error.message || "Registration failed. Please try again.";
+        errorMessage.classList.add("visible");
+        submitButton.disabled = false;
+        submitButton.textContent = "Pay and submit registration";
+      }
+    });
+
+    loadConfig().catch(() => {
+      errorMessage.textContent = "Could not load payment settings.";
+      errorMessage.classList.add("visible");
+    });
+  </script>
+</body>
+</html>

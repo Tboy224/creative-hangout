@@ -1,0 +1,12 @@
+{
+  "name": "hangout-registration",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Custom hangout registration app with unique confirmation codes.",
+  "scripts": {
+    "start": "node --env-file=.env server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
